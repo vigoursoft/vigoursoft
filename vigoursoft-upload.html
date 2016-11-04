@@ -1,0 +1,959 @@
+<html>
+    <META charset="UTF-8">
+    <style>
+
+        header{
+            width: 100%;
+            height:90px;
+        }
+
+        #barProgress{
+            display:none;
+        }
+
+        #fields, #upfields{
+            width :50%;
+            padding : 0;
+
+        }
+
+        #frmAsFile{
+            width:100%;
+            height:50px;
+        }
+
+        #fields{
+            background-color: lightblue;
+        }
+
+        #upfields{
+            background-color: lightskyblue;
+
+        }
+
+        #jobfields{
+            background-color: lightsteelblue;
+        }
+
+        table {font-family: arial, sans-serif; border-collapse: collapse;   width: 100%;}
+        td, th { border: 1px solid #dddddd;  text-align: left;  padding: 2px;}
+        tr:nth-child(even) { background-color: #dddddd;}
+
+    </style>
+
+
+    <script>
+
+        var currentProjectArray;
+        var cookie;
+
+    // see if we have a local memsource token
+    // if not get one and put it into a cookie
+    // this works only on Firefox
+    // so we change the readCookie to use the global var cookie
+
+        window.onload = function () {
+
+            var cook = readCookie('memsource');
+            //var cook;
+
+            if (cook == null) {
+                document.getElementById('login').style.display = "block";
+            } else {
+                requestProjects();
+                requestTemplates();
+            }
+
+        }
+
+    // login on memsource to get a new token
+        function login() {
+
+    //https://cloud.memsource.com/web/api/v3/auth/login?userName=<>&password=<>
+            var user = document.getElementById('user').value;
+            var pw = document.getElementById('pw').value;
+
+            var url = "https://cloud.memsource.com/web/api/v3/auth/login?userName=" + encodeURIComponent(user) + "&password=" + encodeURIComponent(pw);
+
+            memSource(url, memauth);
+
+        }
+
+    // XMLHTTP PROCESSOR this is where all calls will be made
+    // right now we have GETs but I plan to change that to either GET or POST and possibly added headers
+        function memSource(url, cfunc) {
+            var xhttp;
+            xhttp = new XMLHttpRequest();
+
+
+            xhttp.onreadystatechange = function () {
+
+                if (this.readyState == 4 && this.status == 200) {
+                    var text = xhttp.responseText;
+                    // alert(text);
+                    if (text[0] == "{")
+                        text = "[" + text + "]";
+
+                    ///document.body.appendChild(addFeedbackTable(text));
+                    /* this appends debug code
+                     var dc= document.getElementById("output");  
+                     dc.innerHTML="";
+                     var tx = document.createTextNode(text);
+                     dc.appendChild(tx);
+                     */
+
+                    cfunc(xhttp.responseText);
+
+                }
+
+
+            };
+
+    // this is extremely odd. login failed when I put this on async (true)
+            xhttp.open("GET", url, false); // sync
+            xhttp.send();
+        }
+
+
+    // callback functions
+    // first one authorization
+        function memauth(txt) {
+
+            var auth = JSON.parse(txt);
+
+            if (auth.token == null) {
+                alert("Login failed. Please try again." + auth.errorCode);
+                return;
+            }
+
+            cookie = auth.token;
+            // alert(auth.token);
+            // createCookie('memsource', auth.token, 1);
+            requestProjects();
+            requestTemplates();
+            document.getElementById('login').style.display = "none";
+
+
+        }
+
+    // now request templates and list them
+    //https://cloud.memsource.com/web/api/v2/projectTemplate/list?token=1S79aZ1nLAmzyDd4tyAuFhlS9pZ1I1dQl0iXE5XeaDy0vmk8V4zm81dlD0uWr3HC81
+        function requestTemplates() {
+            var url = "https://cloud.memsource.com/web/api/v2/projectTemplate/list?token=" + readCookie('memsource');
+            memSource(url, listTemplates);
+
+        }
+    // the templates come as an array
+    // put them into a dropdown list. option value is the unique ID
+    // which we also need for project creation
+        function listTemplates(txt) {
+            var arr = JSON.parse(txt);
+
+            var select = document.getElementById('selectTemplate');
+            select.options.length = 0;
+
+            for (var i = 0; i < arr.length; i++) {
+                var opt = document.createElement('option');
+
+                opt.value = arr[i].id;
+                opt.innerHTML = arr[i].templateName + "; Source: " + arr[i].sourceLang + "; Target: " + arr[i].targetLangs;
+                select.appendChild(opt);
+            }
+
+        }
+
+    // get a list of projects and display them
+        function requestProjects() {
+            var url = "https://cloud.memsource.com/web/api/v2/project/list?token=" + readCookie('memsource');
+            memSource(url, listProjects);
+
+        }
+        function listProjects(txt) {
+            currentProjectArray = JSON.parse(txt);
+
+            var select = document.getElementById('selectAllProjects');
+            select.options.length = 0;
+
+            for (var i = 0; i < currentProjectArray.length; i++) {
+                var opt = document.createElement('option');
+
+                opt.value = currentProjectArray[i].id;
+                opt.innerHTML = currentProjectArray[i].name + "; Source: " + currentProjectArray[i].sourceLang + "; Target: " + currentProjectArray[i].targetLangs + " Status " + currentProjectArray[i].status;
+
+                select.appendChild(opt);
+
+                if (i > 100)
+                    break;
+
+            }
+
+            if (select.options.length > 0) {
+                select.selectedIndex = 0;
+                projectSelectChanged();
+            }
+
+        }
+
+    // create a new project using select id="selectTemplate"
+        function requestNewProject() {
+            var selector = document.getElementById('selectTemplate');
+            var value = selector[selector.selectedIndex].value;
+            var pName = document.getElementById('newProject').value;
+
+    // https://cloud.memsource.com/web/api/v3/project/createFromTemplate?token=
+    // 1S79aZ1nLAmzyDd4tyAuFhlS9pZ1I1dQl0iXE5XeaDy0vmk8V4zm81dlD0uWr3HC81&template=66396&name=firstapiProject
+            var url = "https://cloud.memsource.com/web/api/v3/project/createFromTemplate?token=" + readCookie('memsource') +
+                    "&template=" + value + "&name=" + pName;
+            memSource(url, makeNewProject);
+
+
+        }
+        function makeNewProject(txt) {
+    // add this to the project list dropdown and populate the UPLOAD form
+            requestProjects();
+            return;
+        }
+
+    // list jobs for currently selected project
+        function requestProjectJobs(projectID) {
+            var url = "https://cloud.memsource.com/web/api/v8/job/listByProject?token=" + readCookie('memsource') +
+                    "&project=" + projectID;
+            memSource(url, listJobs);
+        }
+        function listJobs(txt) {
+            var top = JSON.parse(txt);
+            var arr = top.jobParts;
+            var obj;
+            var table = document.getElementById('jobPartsList');
+            table.innerHTML = "";
+            var thead = document.createElement('thead');
+            table.appendChild(thead);
+            var hrow = document.createElement('tr');
+            thead.appendChild(hrow);
+            var tbody = document.createElement('tbody');
+            table.appendChild(tbody);
+            var cell;
+            var cellText;
+            var checkbox;
+            var hide = [1, 2, 3, 6];
+
+
+            for (var x = 0; x < arr.length; x++) {
+                obj = top.jobParts[x];
+                var contentrow = document.createElement('tr');
+                var colCount = 0;
+
+                if (obj.workflowLevel == "1")
+                    for (var prop in obj) {
+                        if (obj.hasOwnProperty(prop)) {
+
+                            console.log("obj." + prop + " = " + obj[prop]);
+                            // if x is 0 put PROP in table header. for any value of x put obj[prop] in table row
+                            if (x == 0) {
+                                cell = document.createElement('td');
+                                cellText = document.createTextNode(prop);
+                                cell.appendChild(cellText);
+                                hrow.appendChild(cell);
+                                if (colCount > 7 || (hide.indexOf(colCount) > -1))
+                                    cell.style.display = 'none';
+
+                            }
+
+                            cell = document.createElement('td');
+                            /* if the count is 0 we have an ID
+                             we want to put that into a checkbox so we can select a file to download
+                             */
+                            if (colCount == 0) {
+                                checkbox = document.createElement('input');
+                                checkbox.setAttribute('type', 'checkbox');
+                                cell.appendChild(checkbox);
+                            }
+                            // append whatever text
+                            cellText = document.createTextNode(obj[prop]);
+
+                            cell.appendChild(cellText);
+                            contentrow.appendChild(cell);
+                            if (colCount > 7 || (hide.indexOf(colCount) > -1))
+                                cell.style.display = 'none';
+
+                            colCount++;
+                        }
+
+
+                        tbody.appendChild(contentrow);
+
+                    } /// var x
+
+
+            }
+
+
+
+            return;
+        }
+
+
+
+        /* set the ID in the form for file upload
+         add the target languages
+         get a list of jobs for the currently selected project
+         */
+
+        function projectSelectChanged() {
+            var selector = document.getElementById('selectAllProjects');
+            var value = selector[selector.selectedIndex].value;
+            document.getElementById('frmproject').value = value;
+    //   document.getElementById('frmtoken').value=readCookie('memsource');
+
+
+            for (var i = 0; i < currentProjectArray.length; i++) {
+
+                if (currentProjectArray[i].id == value) {
+                    var str = currentProjectArray[i].targetLangs;
+                    var parent = document.getElementById("frmlanglist");
+                    parent.innerHTML = "";
+
+                    langs = String(str).split(',');
+
+                    for (var x = 0; x < langs.length; x++) {
+                        // <input type="text" name="targetLang" />
+                        var input = document.createElement('input');
+                        input.type = "text";
+                        input.name = "targetLang";
+                        input.value = langs[x];
+
+                        parent.appendChild(input);
+
+                    }
+
+                    requestProjectJobs(currentProjectArray[i].id);
+                    break;
+                } //if
+
+            }
+
+        }
+
+    /// cookies
+        function createCookie(name, value, days) {
+            if (days == null)
+                days = 1;
+
+            if (days) {
+                var date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                var expires = "; expires=" + date.toGMTString();
+                //alert(expires);
+            } else
+                var expires = "";
+
+            alert(name + "=" + value + expires + ";");
+            //document.cookie = name+"="+value+expires+";";
+            document.cookie = name + "=" + value + expires + "; path=/";
+
+        }
+
+        function readCookie(name) {
+            return cookie;
+            /*
+             var nameEQ = name + "=";
+             var dc=document.cookie;
+         
+             if (dc.length==0){
+             // alert("No cookie found");
+             return null;
+             }
+         
+             var ca = document.cookie.split(';');
+         
+             for(var i=0;i < ca.length;i++) {
+             var c = ca[i];
+             while (c.charAt(0)==' ') c = c.substring(1,c.length);
+             if (c.indexOf(nameEQ) == 0)
+         
+             //alert(name +"    "+c.substring(nameEQ.length,c.length));
+         
+             return c.substring(nameEQ.length,c.length);
+         
+             }
+         
+             return null;*/
+        }
+
+        function eraseCookie(name) {
+            createCookie(name, "", -1);
+        }
+    /// end cookies
+
+    // make a generic table
+        function addFeedbackTable(txt) {
+            var arr = JSON.parse(txt);
+
+            var obj;
+            var table = document.createElement('table');
+            table.innerHTML = "";
+            var thead = document.createElement('thead');
+            table.appendChild(thead);
+            var hrow = document.createElement('tr');
+            thead.appendChild(hrow);
+            var tbody = document.createElement('tbody');
+            table.appendChild(tbody);
+            var cell;
+            var cellText;
+            var checkbox;
+            var hide = [1, 2, 3, 6];
+
+
+            for (var x = 0; x < arr.length; x++) {
+                obj = arr[x];
+                var contentrow = document.createElement('tr');
+                var colCount = 0;
+
+                for (var prop in obj) {
+                    if (obj.hasOwnProperty(prop)) {
+                        console.log("obj." + prop + " = " + obj[prop]);
+                        // if x is 0 put PROP in table header. for any value of x put obj[prop] in table row
+                        if (x == 0) {
+                            cell = document.createElement('td');
+                            cellText = document.createTextNode(prop);
+                            cell.appendChild(cellText);
+                            hrow.appendChild(cell);
+                            if (colCount > 7 || (hide.indexOf(colCount) > -1))
+                                cell.style.display = 'none';
+
+                        }
+
+                        cell = document.createElement('td');
+                        cellText = document.createTextNode(obj[prop]);
+
+                        cell.appendChild(cellText);
+                        contentrow.appendChild(cell);
+                        if (colCount > 7 || (hide.indexOf(colCount) > -1))
+                            cell.style.display = 'none';
+
+                        colCount++;
+                    }
+
+
+                    tbody.appendChild(contentrow);
+
+                } /// var x
+
+
+            }
+
+            return table;
+
+        }
+
+        function reset() {
+            var file = document.getElementById("frmfile");
+            var asfile = document.getElementById("frmAsFile");
+            file.value = "";
+            asfile.value = "";
+    //make sure we get the button
+            document.getElementById("btnUpload").disabled = false;
+            document.getElementById('barProgress').style.display = "none";
+        }
+
+    // analyze the jobs listed in the jobs table
+        function analyze(txt) {
+            /* get the jobparts ID from the table and pass thme to the api */
+            var top = JSON.parse(txt);
+            var arr = top.jobParts;
+            var obj;
+            var value = "";
+            var x = 0;
+
+            for (x = 0; x < arr.length; x++) {
+
+                obj = top.jobParts[x];
+                //alert(obj.id);
+                if (obj.workflowLevel == "1")
+                    value = value + "&jobPart=" + obj.id;
+            }
+    //alert("We will now run an Analysis. This make take a while. Do not close the window.\n\nYou can save wordcounts for future use.");
+            var url = "https://cloud.memsource.com/web/api/v2/analyse/create?token=" + readCookie('memsource') + value;
+    // alert(url);
+            memSource(url, listAnalysis);
+        }
+
+        function listAnalysis(txt) {
+            var top = JSON.parse(txt);
+    // top object contains 1 prop 'parts'
+            var arr = top.parts;
+            var obj;
+            var table = document.createElement('table');
+            table.innerHTML = "";
+            var thead = document.createElement('thead');
+            table.appendChild(thead);
+            var hrow = document.createElement('tr');
+            thead.appendChild(hrow);
+            var tbody = document.createElement('tbody');
+            table.appendChild(tbody);
+            var cell;
+            var cellText;
+            var checkbox;
+            //project name
+            var selector = document.getElementById('selectAllProjects');
+            var pjname = selector[selector.selectedIndex].innerHTML;
+
+            // variables for consolidated totals
+            var allWords = 0;
+            var allReps = 0;
+            var all101 = 0;
+            var all100 = 0;
+            var all95 = 0;
+            var all85 = 0;
+            var all75 = 0;
+            var all50 = 0;
+            var all0 = 0;
+
+            /* parts contains an array
+             we are interested in the first element, which is an object */
+            for (var x = 0; x < arr.length; x++) {
+                obj = arr[x];
+                // that obj has a prop jobParts, which is another array of objects
+                // targetlang is at the same level as jobParts
+                var jobParts = obj.jobParts;
+                var targetLang = obj.targetLang;
+
+                if (x == 0) {
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode("ID");
+                    cell.appendChild(cellText);
+                    hrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode("Filename");
+                    cell.appendChild(cellText);
+                    hrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode("targetLang");
+                    cell.appendChild(cellText);
+                    hrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode("Data");
+                    cell.appendChild(cellText);
+                    hrow.appendChild(cell);
+                }
+
+                // step through jobparts
+                for (var jp = 0; jp < jobParts.length; jp++) {
+
+                    obj = jobParts[jp];
+
+                    var contentrow = document.createElement('tr');
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode(obj.id);
+                    cell.appendChild(cellText);
+                    contentrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode(obj.fileName);
+                    cell.appendChild(cellText);
+                    contentrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cellText = document.createTextNode(targetLang);
+                    cell.appendChild(cellText);
+                    contentrow.appendChild(cell);
+
+                    cell = document.createElement('td');
+                    cell.setAttribute('style', ' white-space:pre');
+                    // values for current file plus running count for grand total
+
+                    var value = "";
+                    value = "\nAll words: " + obj.data.all.words;
+                    allWords = allWords + obj.data.all.words;
+                    value = value + "\nRepetitions: " + obj.data.repetitions.words;
+                    allReps = allReps + obj.data.repetitions.words;
+                    value = value + "\nTM match 101%: " + obj.data.transMemoryMatches.match101.words;
+                    all101 = all101 + obj.data.transMemoryMatches.match101.words;
+                    value = value + "\nTM match 100%: " + obj.data.transMemoryMatches.match100.words;
+                    all100 = all100 + obj.data.transMemoryMatches.match100.words;
+                    value = value + "\nTM match 95-99%: " + obj.data.transMemoryMatches.match95.words;
+                    all95 = all95 + obj.data.transMemoryMatches.match95.words;
+                    value = value + "\nTM match 85-94%: " + obj.data.transMemoryMatches.match85.words;
+                    all85 = all85 + obj.data.transMemoryMatches.match85.words;
+                    value = value + "\nTM match 75-84%: " + obj.data.transMemoryMatches.match75.words;
+                    all75 = all75 + obj.data.transMemoryMatches.match75.words;
+                    value = value + "\nTM match 50-74%: " + obj.data.transMemoryMatches.match50.words;
+                    all50 = all50 + obj.data.transMemoryMatches.match50.words;
+                    value = value + "\nTM match 0-49%: " + obj.data.transMemoryMatches.match0.words + "\n";
+                    all0 = all0 + obj.data.transMemoryMatches.match0.words;
+
+
+                    cellText = document.createTextNode(value);
+                    cell.appendChild(cellText);
+                    contentrow.appendChild(cell);
+
+
+                    contentrow.appendChild(cell);
+                    tbody.appendChild(contentrow);
+                }
+
+            } //x=0; x < arr.length;
+            /* totals
+             create a new row and append */
+
+            var contentrow = document.createElement('tr');
+
+            cell = document.createElement('td');
+            cellText = document.createTextNode("All Files combined");
+            cell.appendChild(cellText);
+            contentrow.appendChild(cell);
+
+            cell = document.createElement('td');
+            cellText = document.createTextNode(" ");
+            cell.appendChild(cellText);
+            contentrow.appendChild(cell);
+
+            cell = document.createElement('td');
+            cellText = document.createTextNode("all langs");
+            cell.appendChild(cellText);
+            contentrow.appendChild(cell);
+
+            cell = document.createElement('td');
+            cell.setAttribute('style', ' white-space:pre');
+            var value = "";
+            value = "\nAll words: " + allWords;
+            value = value + "\nRepetitions: " + allReps;
+            value = value + "\nTM match 101%: " + all101;
+            value = value + "\nTM match 100%: " + all100;
+            value = value + "\nTM match 95-99%: " + all95;
+            value = value + "\nTM match 85-94%: " + all85;
+            value = value + "\nTM match 75-84%: " + all75;
+            value = value + "\nTM match 50-74%: " + all50;
+            value = value + "\nTM match 0-49%: " + all0;
+            cellText = document.createTextNode(value);
+            cell.appendChild(cellText);
+            contentrow.appendChild(cell);
+
+            tbody.appendChild(contentrow);
+
+            document.body.appendChild(table);
+            // JavaScript file-like object
+
+            var content = "<html><table>" + table.innerHTML + "</table></html>"; // the body of the new file...
+            var blob = new Blob([content], {type: "text/html"});
+            var a = document.createElement('a');
+            a.href = window.URL.createObjectURL(blob);
+            document.body.appendChild(a);
+            a.download = "Project-" + pjname + ".html";
+            a.click();
+            /// bring back the upload button
+            document.getElementById("btnUpload").disabled = false;
+            document.getElementById('barProgress').style.display = "none";
+        }
+
+
+    // the data object
+        function data(obj) {
+            var value = "";
+            value = "\r\nTotal words: " + obj.all.words;
+            value = value + "\nRepetitions: " + obj.repetitions.words;
+            value = value + "\nTM match 101%: " + obj.transMemoryMatches.match101.words;
+            value = value + "\nTM match 100%: " + obj.transMemoryMatches.match100.words;
+            value = value + "\nTM match 95-99%: " + obj.transMemoryMatches.match95.words;
+            value = value + "\nTM match 85-94%: " + obj.transMemoryMatches.match85.words;
+            value = value + "\nTM match 75-84%: " + obj.transMemoryMatches.match75.words;
+            value = value + "\nTM match 50-74%: " + obj.transMemoryMatches.match50.words;
+            value = value + "\nTM match 0-49%: " + obj.transMemoryMatches.match0.words + "\n";
+
+            return value;
+        }
+
+        function traverse(x, level) {
+            if (isArray(x)) {
+                traverseArray(x, ++level);
+            } else if ((typeof x === 'object') && (x !== null)) {
+                traverseObject(x, ++level);
+            } else {
+                console.log(level + x);
+            }
+        }
+
+        function isArray(o) {
+            return Object.prototype.toString.call(o) === '[object Array]';
+        }
+
+        function traverseArray(arr, level) {
+            console.log(level + "<array>");
+            arr.forEach(function (x) {
+                traverse(x, level + "  ");
+            });
+        }
+
+        function traverseObject(obj, level) {
+            console.log(level + "<object>");
+            for (var key in obj) {
+                if (obj.hasOwnProperty(key)) {
+                    console.log(level + "  " + key + ":");
+                    traverse(obj[key], level + "    ");
+                }
+            }
+        }
+
+        // get keys of an object or array
+        function getkeys(z) {
+            var out = [];
+            for (var i in z) {
+                out.push(i)
+            }
+            ;
+            return out;
+        }
+
+    // print all inside an object
+        function allInternalObjs(data, name) {
+            name = name || 'data';
+            return getkeys(data).reduce(function (olist, k) {
+                var v = data[k];
+                if (typeof v === 'object') {
+                    olist.push.apply(olist, allInternalObjs(v, name + '.' + k));
+                } else {
+                    olist.push(name + '.' + k + ' = ' + v);
+                }
+                return olist;
+            }, []);
+        }
+
+    // UPLOAD
+        function upload()
+        {
+            var xhr = new XMLHttpRequest();
+
+            var file = document.getElementById("frmfile");
+            var project = document.getElementById("frmproject");
+            var langs = document.getElementById("frmlanglist").childNodes;
+
+            /* Create a FormData instance */
+            var formData = new FormData();
+            /* Add the file */
+
+            if (file.value != "")
+                formData.append("file", file.files[0]);
+            else {
+                // JavaScript file-like object
+                var asfile = document.getElementById("frmAsFile");
+
+                var content = asfile.value; // the body of the new file...
+                var blob = new Blob([content], {type: "application/octet-stream"});
+                var filename;
+                var n = String(Math.floor((Math.random() * 1000) + 1))
+                if (content.length > 20)
+                    filename = content.substring(0, 19) + n + ".txt";
+                else
+                    filename = "mystring" + n + ".txt";
+
+                formData.append("file", blob, filename);
+
+            }
+
+            formData.append("token", readCookie('memsource'));
+            formData.append("project", project.value);
+
+            for (var x = 0; x < langs.length; x++) {
+                // <input type="text" name="targetLang" />
+                formData.append("targetLang", langs[x].value);
+
+            }
+
+
+            xhr.open("POST", "https://cloud.memsource.com/web/api/v8/job/create", false);
+            // disable the upload button temporarily
+            document.getElementById("btnUpload").disabled = true;
+            document.getElementById('barProgress').style.display = "block";
+
+            xhr.onload = function (e) {
+                if (this.readyState == 4 && this.status == 200) {
+                    var text = this.responseText;
+                    if (text[0] == "{")
+                        text = "[" + text + "]";
+                    /*  var dc= document.getElementById("output");  
+                     dc.innerHTML="";
+                     var tx = document.createTextNode(text);
+                     dc.appendChild(tx);
+                     */
+
+                    file.value = "";
+                    //  document.body.appendChild(addFeedbackTable(text));
+                    listJobs(this.responseText);
+
+                    setTimeout(analyze(this.responseText), 500);
+
+
+                }
+            };
+
+            xhr.send(formData);  /* Send to server */
+
+        }
+
+    /// DOWNLOAD
+        function download() {
+
+            /* get the filename from the table because I cannot access the header  // get the ID
+             var x = document.getElementById("jobPartsList").rows[1].cells[0].innerHTML;
+             var filename = document.getElementById("jobPartsList").rows[1].cells[4].innerHTML;
+             */
+
+            var filename;
+            var x;
+            var extension;
+            var rowCount = document.getElementById("jobPartsList").rows.length;
+
+
+
+            for (c = 1; c < rowCount; c++) {
+                var idchild = document.getElementById("jobPartsList").rows[c].cells[0].children;
+                var str = document.getElementById("jobPartsList").rows[c].cells[0].innerHTML;
+                str = str.substring(str.indexOf('>') + 1);
+
+                if (idchild[0].checked) {
+                    //alert( idchild[0].checked + "<<"+ str);
+                    filename = document.getElementById("jobPartsList").rows[c].cells[4].innerHTML;
+                    // langtag
+                    extension = document.getElementById("jobPartsList").rows[c].cells[5].innerHTML;
+                    x = str;
+                    var n = filename.lastIndexOf(".");
+                    str = filename.substring(0, n) + "-" + extension + "." + filename.substring(n + 1);
+                    filename = str;
+
+                    // idchild[0].checked=false;
+                    break;
+                }
+
+            }
+
+    // we have the data, now execute a fetch
+            fetch("https://cloud.memsource.com/web/api/v8/job/getCompletedFile?token=" + readCookie('memsource') + "&jobPart=" + x, {
+                method: 'get',
+            })
+                    .then(function (response) {
+                        return response.blob();
+                    })
+                    .then(function (imageBlob) {
+
+                        var a = document.createElement('a');
+                        a.href = window.URL.createObjectURL(imageBlob);
+                        document.body.appendChild(a);
+                        a.download = filename;
+                        a.click();
+                    })
+                    .catch(function (error) {
+                        console.error(error.message);
+                    });
+
+
+
+        }
+
+    </script>
+
+    <body>
+        <header>
+            <img src="vslogo.png" style="float:left"><h3>Create translation projects and upload content </h3> 
+            <progress id="barProgress" style="width:30%"></progress>
+        </header>
+
+
+        <div id="login">
+            Please log into Memource with your Memsource user name and password.
+            <p>
+                The access token will be valid for as long as you keep this page open.
+            </p>
+
+            <div>
+                User name:<br>
+                <input type="text" name="user" id="user" value="">
+                <br>
+                Password:<br>
+                <input type="password" name="pw" id="pw" value="">
+                <br><br>
+                <input type="button" value="Submit" onclick=login()>
+            </div>
+
+        </div>
+
+        <!--
+        <a href="javascript:readCookie('memsource')" >Read cookie</a>
+        <a href="javascript:eraseCookie('memsource')" >Erase cookie</a>.</p>
+        
+        <a href="javascript:requestTemplates()" >Get list of available localization project options</a>
+        
+        <a href="javascript:requestProjects()" >Get a list of projects</a></p>
+        -->
+
+        <div class="dvfields">
+
+            <fieldset id="fields" style="width:400px margin:30px"> <legend>Create a new, empty project</legend>
+                Select a template: <select id="selectTemplate"></select></p>
+                Name of new project: <input type="text" size="35" id="newProject" value="Change Me_1/10/2016"></p>
+                Note for new project: <input type="text" size="35" id="newProjectNote" value="">
+
+                </p>
+                <input type="button"  value="Create new project using selected template" onclick="requestNewProject()" />
+
+                </p>
+
+            </fieldset>
+
+            <fieldset id="upfields" style="width:400px margin:30px"> <legend>Upload zip file or plain text to selected project
+                </legend>
+                <!--<p> Token:  <input type="text" name="token" id="frmtoken" /></p> -->
+                </p>
+                Project Name: <select id="selectAllProjects"  onchange=projectSelectChanged()></select>
+                <input type="hidden" name="project" id="frmproject" /></p>
+                <p> Target languages: <span id="frmlanglist"> <input type="text" name="targetLang" />
+                    </span>
+                </p>
+
+                <p><input type="file" name="file" id="frmfile" /></p>
+                Or paste plain text to upload here:</br> 
+                <textarea name="frmAsFile" id="frmAsFile">
+                </textarea> 
+
+                <p> <input type="button"  id="btnUpload" value="Upload"  onclick="upload()" />
+                    <input type="button"  value="Reset" style="float:right" onclick="reset()" />
+                </p>
+
+            </fieldset>
+
+            <fieldset id="jobfields" style="width:50%" margin="30px"> <legend>Jobs</legend>
+                <table id="jobPartsList" style="width:600px">
+
+                </table>
+
+                <p>
+                    <input type="button"  value="Download selected job" style="float:right" onclick="download()" /></p>
+
+            </fieldset>
+        </div>
+
+        <!-- </form> -->
+
+        <div id="output">
+        </div>
+
+        <script>
+            /*This sets the default name for a new project.
+             Make desired changes here.
+             */
+            var monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "June",
+                "July", "Aug", "Sept", "Oct", "Nov", "Dec"];
+
+            var d = new Date;
+            var pjname = "Project_" + d.getDate() + "_" + monthNames[d.getMonth()] + "_" + d.getFullYear();
+            var pj = document.getElementById("newProject");
+            pj.value = pjname;
+
+        </script>
+
+    </body>
+
+</html>
