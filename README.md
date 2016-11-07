@@ -1,0 +1,23 @@
+# vigoursoft
+A pure javascript utility for file uploads to Memsource Cloud (c Memsource)
+
+his project contains a file upload utility by http://vigoursoft.com/
+
+The utility replaces the "automation widget" that comes with
+an instance of https://www.memsource.com/en
+
+You need a Memsource account to use this tool.
+
+The Vigoursoft tool is a standalone html with javascript 
+XMLHttp and Fetch and offers the following features:
+
+1. Create a new Memsource project from a list of Memsource templates
+2. Display projects that exist in Memsource
+3. Upload a .zip file archive with files to eb translated
+4. Or upload the contents of a text file by pasting in 
+into a text area.
+5. A comprehensive Analysis of uploaded files/text is
+automatically run after successful upload. 
+
+The code is provided as is. Free for commercial and
+non-commercial use.
